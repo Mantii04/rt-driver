@@ -25,15 +25,21 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bc bison build-essential flex libssl-dev libelf-dev gcc-aarch64-linux-gnu cpio clang lld llvm
 
-      - name: Configure
+      - name: Configure (dragonheart_defconfig + LOCALVERSION=-DragonHeart)
         run: |
           cd kernel
           export ARCH=arm64 LLVM=1 LLVM_IAS=1
-          make gki_defconfig
+          # Match the ROM's defconfig exactly
+          make dragonheart_defconfig
+          # Set localversion to match what's on the phone
+          ./scripts/config --set-str CONFIG_LOCALVERSION "-DragonHeart"
+          # LTO off only to avoid OOM on GitHub runner (does NOT affect symbol CRCs)
           ./scripts/config --disable LTO_CLANG_FULL
           ./scripts/config --disable LTO_CLANG_THIN
           ./scripts/config --disable LTO_CLANG
           make olddefconfig
+          # Confirm the settings stuck
+          grep -E "CONFIG_LOCALVERSION=|CONFIG_LTO" .config
 
       - name: Get kernel commit SHA
         id: kernel-sha
@@ -44,7 +50,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: kernel/Module.symvers
-          key: symvers-${{ steps.kernel-sha.outputs.sha }}-${{ hashFiles('kernel/.config') }}
+          key: symvers-${{ steps.kernel-sha.outputs.sha }}-dragonheart-${{ hashFiles('kernel/.config') }}
 
       - name: Prepare headers
         run: |
@@ -57,7 +63,7 @@ jobs:
         run: |
           cd kernel
           export ARCH=arm64 LLVM=1 LLVM_IAS=1
-          make -j2 vmlinux
+          make -j$(nproc) vmlinux
           cp vmlinux.symvers Module.symvers
 
       - name: Verify Module.symvers
@@ -72,7 +78,7 @@ jobs:
           export ARCH=arm64 LLVM=1 LLVM_IAS=1
           make M=$GITHUB_WORKSPACE/driver modules 2>&1 | tee module-build.log
 
-      - name: Fail only on CRC/symbol warnings
+      - name: Fail only on real CRC/symbol warnings
         run: |
           cd kernel
           if grep -E 'WARNING: Symbol version dump|Unresolved symbol|disagrees about version' module-build.log; then
