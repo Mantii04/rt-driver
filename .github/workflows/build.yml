@@ -1,0 +1,41 @@
+name: Build RT Module
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Driver
+        uses: actions/checkout@v4
+        with:
+          path: driver
+
+      - name: Checkout Kernel
+        uses: actions/checkout@v4
+        with:
+          repository: Mantii04/dragonheart_kernel_motorola_cancunf
+          ref: android12-5.10
+          path: kernel
+          fetch-depth: 1
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential flex libssl-dev libelf-dev
+
+      - name: Build
+        run: |
+          cd kernel
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          make O=out gki_defconfig
+          make O=out modules_prepare
+          make O=out M=$GITHUB_WORKSPACE/driver modules
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: suvhwvwrtnb
+          path: kernel/out/driver/*.ko
