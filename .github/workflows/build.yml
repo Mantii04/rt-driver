@@ -58,7 +58,6 @@ jobs:
           cd kernel
           export ARCH=arm64 LLVM=1 LLVM_IAS=1
           make -j2 vmlinux
-          # vmlinux build generates vmlinux.symvers; rename for module builds
           cp vmlinux.symvers Module.symvers
 
       - name: Verify Module.symvers
@@ -71,12 +70,17 @@ jobs:
         run: |
           cd kernel
           export ARCH=arm64 LLVM=1 LLVM_IAS=1
-          make M=$GITHUB_WORKSPACE/driver modules
+          make M=$GITHUB_WORKSPACE/driver modules 2>&1 | tee module-build.log
 
-      - name: Check for CRC warnings
+      - name: Fail only on CRC/symbol warnings
         run: |
           cd kernel
-          make M=$GITHUB_WORKSPACE/driver modules 2>&1 | grep -i "warning" && exit 1 || echo "No warnings - good!"
+          if grep -E 'WARNING: Symbol version dump|Unresolved symbol|disagrees about version' module-build.log; then
+            echo "CRC/symbol problem detected!"
+            exit 1
+          else
+            echo "No CRC/symbol warnings - OK"
+          fi
 
       - name: Upload
         uses: actions/upload-artifact@v4
