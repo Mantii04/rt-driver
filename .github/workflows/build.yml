@@ -58,6 +58,8 @@ jobs:
           cd kernel
           export ARCH=arm64 LLVM=1 LLVM_IAS=1
           make -j2 vmlinux
+          # vmlinux build generates vmlinux.symvers; rename for module builds
+          cp vmlinux.symvers Module.symvers
 
       - name: Verify Module.symvers
         run: |
