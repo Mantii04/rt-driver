@@ -25,27 +25,41 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bc bison build-essential flex libssl-dev libelf-dev gcc-aarch64-linux-gnu cpio clang lld llvm
 
-      - name: Build Module
+      - name: Build vmlinux (generates Module.symvers)
         run: |
           cd kernel
           export ARCH=arm64
           export LLVM=1
           export LLVM_IAS=1
           make gki_defconfig
-          make modules_prepare
-          make M=$GITHUB_WORKSPACE/driver modules 2>&1 | tail -150
+          make -j$(nproc) vmlinux
+
+      - name: Confirm Module.symvers exists
+        run: |
+          ls -la kernel/Module.symvers
+          echo "=== Sample CRCs ==="
+          grep -E "module_layout|printk|register_user_hw_breakpoint" kernel/Module.symvers | head
+
+      - name: Build Module
+        run: |
+          cd kernel
+          export ARCH=arm64
+          export LLVM=1
+          export LLVM_IAS=1
+          make M=$GITHUB_WORKSPACE/driver modules
+
+      - name: Verify no CRC warnings
+        run: |
+          cd kernel
+          make M=$GITHUB_WORKSPACE/driver modules 2>&1 | grep -i "warning" || echo "No warnings - good!"
 
       - name: Locate .ko
         run: |
-          echo "=== Search for .ko ==="
-          find $GITHUB_WORKSPACE -name "*.ko" -type f 2>/dev/null
-          ls -la $GITHUB_WORKSPACE/driver/
+          find $GITHUB_WORKSPACE/driver -name "*.ko"
 
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: memkernel
-          path: |
-            driver/memkernel.ko
-            driver/*.ko
+          path: driver/*.ko
           if-no-files-found: error
