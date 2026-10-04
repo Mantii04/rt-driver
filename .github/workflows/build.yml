@@ -23,19 +23,29 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc bison build-essential flex libssl-dev libelf-dev gcc-aarch64-linux-gnu
+          sudo apt-get install -y bc bison build-essential flex libssl-dev libelf-dev gcc-aarch64-linux-gnu cpio clang lld llvm
 
-      - name: Build
+      - name: Build Module
         run: |
           cd kernel
           export ARCH=arm64
-          export CROSS_COMPILE=aarch64-linux-gnu-
-          make O=out gki_defconfig
-          make O=out modules_prepare
-          make O=out M=$GITHUB_WORKSPACE/driver modules
+          export LLVM=1
+          export LLVM_IAS=1
+          make gki_defconfig
+          make modules_prepare
+          make M=$GITHUB_WORKSPACE/driver modules 2>&1 | tail -150
+
+      - name: Locate .ko
+        run: |
+          echo "=== Search for .ko ==="
+          find $GITHUB_WORKSPACE -name "*.ko" -type f 2>/dev/null
+          ls -la $GITHUB_WORKSPACE/driver/
 
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: suvhwvwrtnb
-          path: kernel/out/driver/*.ko
+          name: memkernel
+          path: |
+            driver/memkernel.ko
+            driver/*.ko
+          if-no-files-found: error
