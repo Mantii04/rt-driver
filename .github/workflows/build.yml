@@ -25,37 +25,56 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bc bison build-essential flex libssl-dev libelf-dev gcc-aarch64-linux-gnu cpio clang lld llvm
 
-      - name: Build vmlinux (generates Module.symvers)
+      - name: Configure
         run: |
           cd kernel
-          export ARCH=arm64
-          export LLVM=1
-          export LLVM_IAS=1
+          export ARCH=arm64 LLVM=1 LLVM_IAS=1
           make gki_defconfig
-          make -j$(nproc) vmlinux
+          ./scripts/config --disable LTO_CLANG_FULL
+          ./scripts/config --disable LTO_CLANG_THIN
+          ./scripts/config --disable LTO_CLANG
+          make olddefconfig
 
-      - name: Confirm Module.symvers exists
+      - name: Get kernel commit SHA
+        id: kernel-sha
+        run: echo "sha=$(cd kernel && git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Module.symvers
+        id: cache-symvers
+        uses: actions/cache@v4
+        with:
+          path: kernel/Module.symvers
+          key: symvers-${{ steps.kernel-sha.outputs.sha }}-${{ hashFiles('kernel/.config') }}
+
+      - name: Prepare headers
+        run: |
+          cd kernel
+          export ARCH=arm64 LLVM=1 LLVM_IAS=1
+          make modules_prepare
+
+      - name: Build vmlinux (cache miss only)
+        if: steps.cache-symvers.outputs.cache-hit != 'true'
+        run: |
+          cd kernel
+          export ARCH=arm64 LLVM=1 LLVM_IAS=1
+          make -j2 vmlinux
+
+      - name: Verify Module.symvers
         run: |
           ls -la kernel/Module.symvers
           echo "=== Sample CRCs ==="
-          grep -E "module_layout|printk|register_user_hw_breakpoint" kernel/Module.symvers | head
+          grep -E "module_layout|register_user_hw_breakpoint" kernel/Module.symvers | head
 
       - name: Build Module
         run: |
           cd kernel
-          export ARCH=arm64
-          export LLVM=1
-          export LLVM_IAS=1
+          export ARCH=arm64 LLVM=1 LLVM_IAS=1
           make M=$GITHUB_WORKSPACE/driver modules
 
-      - name: Verify no CRC warnings
+      - name: Check for CRC warnings
         run: |
           cd kernel
-          make M=$GITHUB_WORKSPACE/driver modules 2>&1 | grep -i "warning" || echo "No warnings - good!"
-
-      - name: Locate .ko
-        run: |
-          find $GITHUB_WORKSPACE/driver -name "*.ko"
+          make M=$GITHUB_WORKSPACE/driver modules 2>&1 | grep -i "warning" && exit 1 || echo "No warnings - good!"
 
       - name: Upload
         uses: actions/upload-artifact@v4
